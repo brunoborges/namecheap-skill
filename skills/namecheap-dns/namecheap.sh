@@ -70,7 +70,7 @@ api_request() {
     # Check for errors in the response
     if echo "$response" | grep -q 'Status="ERROR"'; then
         local error_msg
-        error_msg=$(echo "$response" | grep -oP '(?<=<Err Code=")[^"]*"[^>]*>\K[^<]+' 2>/dev/null || echo "$response" | sed -n 's/.*<Err[^>]*>\(.*\)<\/Err>.*/\1/p')
+        error_msg=$(echo "$response" | sed -n 's/.*<Err[^>]*>\([^<]*\)<\/Err>.*/\1/p')
         print_error "API returned error: $error_msg"
         return 1
     fi
@@ -104,13 +104,15 @@ format_dns_records() {
     printf "%-20s %-8s %-40s %-8s %-6s\n" "HOST" "TYPE" "ADDRESS" "TTL" "MXPREF"
     printf "%-20s %-8s %-40s %-8s %-6s\n" "----" "----" "-------" "---" "------"
 
-    echo "$xml" | grep -oP '<host[^/]*/>' | while read -r line; do
+    echo "$xml" | grep -oE '<host[^>]*/>' | while read -r line; do
         local name type address ttl mxpref
-        name=$(echo "$line" | grep -oP 'Name="\K[^"]+' || echo "")
-        type=$(echo "$line" | grep -oP 'Type="\K[^"]+' || echo "")
-        address=$(echo "$line" | grep -oP 'Address="\K[^"]+' || echo "")
-        ttl=$(echo "$line" | grep -oP 'TTL="\K[^"]+' || echo "1800")
-        mxpref=$(echo "$line" | grep -oP 'MXPref="\K[^"]+' || echo "-")
+        name=$(echo "$line" | sed -n 's/.*Name="\([^"]*\)".*/\1/p')
+        type=$(echo "$line" | sed -n 's/.*Type="\([^"]*\)".*/\1/p')
+        address=$(echo "$line" | sed -n 's/.*Address="\([^"]*\)".*/\1/p')
+        ttl=$(echo "$line" | sed -n 's/.*TTL="\([^"]*\)".*/\1/p')
+        mxpref=$(echo "$line" | sed -n 's/.*MXPref="\([^"]*\)".*/\1/p')
+        ttl=${ttl:-1800}
+        mxpref=${mxpref:--}
 
         printf "%-20s %-8s %-40s %-8s %-6s\n" "$name" "$type" "$address" "$ttl" "$mxpref"
     done
@@ -125,12 +127,12 @@ format_domains_list() {
     printf "%-30s %-12s %-12s %-10s\n" "DOMAIN" "EXPIRES" "LOCKED" "AUTO-RENEW"
     printf "%-30s %-12s %-12s %-10s\n" "------" "-------" "------" "----------"
 
-    echo "$xml" | grep -oP '<Domain[^/]*/>' | while read -r line; do
+    echo "$xml" | grep -oE '<Domain[^>]*/>' | while read -r line; do
         local name expires locked autorenew
-        name=$(echo "$line" | grep -oP 'Name="\K[^"]+' || echo "")
-        expires=$(echo "$line" | grep -oP 'Expires="\K[^"]+' || echo "")
-        locked=$(echo "$line" | grep -oP 'IsLocked="\K[^"]+' || echo "")
-        autorenew=$(echo "$line" | grep -oP 'AutoRenew="\K[^"]+' || echo "")
+        name=$(echo "$line" | sed -n 's/.*Name="\([^"]*\)".*/\1/p')
+        expires=$(echo "$line" | sed -n 's/.*Expires="\([^"]*\)".*/\1/p')
+        locked=$(echo "$line" | sed -n 's/.*IsLocked="\([^"]*\)".*/\1/p')
+        autorenew=$(echo "$line" | sed -n 's/.*AutoRenew="\([^"]*\)".*/\1/p')
 
         printf "%-30s %-12s %-12s %-10s\n" "$name" "$expires" "$locked" "$autorenew"
     done
@@ -288,11 +290,12 @@ cmd_dns_set_hosts() {
 
     while IFS= read -r line; do
         local hostname recordtype address ttl mxpref
-        hostname=$(echo "$line" | grep -oP '"HostName"\s*:\s*"\K[^"]+' || echo "")
-        recordtype=$(echo "$line" | grep -oP '"RecordType"\s*:\s*"\K[^"]+' || echo "")
-        address=$(echo "$line" | grep -oP '"Address"\s*:\s*"\K[^"]+' || echo "")
-        ttl=$(echo "$line" | grep -oP '"TTL"\s*:\s*"\K[^"]+' || echo "1800")
-        mxpref=$(echo "$line" | grep -oP '"MXPref"\s*:\s*"\K[^"]+' || echo "")
+        hostname=$(echo "$line" | sed -n 's/.*"HostName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+        recordtype=$(echo "$line" | sed -n 's/.*"RecordType"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+        address=$(echo "$line" | sed -n 's/.*"Address"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+        ttl=$(echo "$line" | sed -n 's/.*"TTL"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+        mxpref=$(echo "$line" | sed -n 's/.*"MXPref"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+        ttl=${ttl:-1800}
 
         if [[ -n "$hostname" && -n "$recordtype" && -n "$address" ]]; then
             params+=("HostName${i}=${hostname}")
@@ -366,11 +369,12 @@ cmd_dns_add_host() {
     while IFS= read -r line; do
         if [[ -z "$line" ]]; then continue; fi
         local h_name h_type h_address h_ttl h_mxpref
-        h_name=$(echo "$line" | grep -oP 'Name="\K[^"]+' || echo "")
-        h_type=$(echo "$line" | grep -oP 'Type="\K[^"]+' || echo "")
-        h_address=$(echo "$line" | grep -oP 'Address="\K[^"]+' || echo "")
-        h_ttl=$(echo "$line" | grep -oP 'TTL="\K[^"]+' || echo "1800")
-        h_mxpref=$(echo "$line" | grep -oP 'MXPref="\K[^"]+' || echo "")
+        h_name=$(echo "$line" | sed -n 's/.*Name="\([^"]*\)".*/\1/p')
+        h_type=$(echo "$line" | sed -n 's/.*Type="\([^"]*\)".*/\1/p')
+        h_address=$(echo "$line" | sed -n 's/.*Address="\([^"]*\)".*/\1/p')
+        h_ttl=$(echo "$line" | sed -n 's/.*TTL="\([^"]*\)".*/\1/p')
+        h_mxpref=$(echo "$line" | sed -n 's/.*MXPref="\([^"]*\)".*/\1/p')
+        h_ttl=${h_ttl:-1800}
 
         if [[ -n "$h_name" && -n "$h_type" && -n "$h_address" ]]; then
             params+=("HostName${i}=${h_name}")
@@ -382,7 +386,7 @@ cmd_dns_add_host() {
             fi
             ((i++))
         fi
-    done < <(echo "$response" | grep -oP '<host[^/]*/>')
+    done < <(echo "$response" | grep -oE '<host[^>]*/>')
 
     # Add the new record
     params+=("HostName${i}=${name}")
@@ -440,11 +444,12 @@ cmd_dns_remove_host() {
     while IFS= read -r line; do
         if [[ -z "$line" ]]; then continue; fi
         local h_name h_type h_address h_ttl h_mxpref
-        h_name=$(echo "$line" | grep -oP 'Name="\K[^"]+' || echo "")
-        h_type=$(echo "$line" | grep -oP 'Type="\K[^"]+' || echo "")
-        h_address=$(echo "$line" | grep -oP 'Address="\K[^"]+' || echo "")
-        h_ttl=$(echo "$line" | grep -oP 'TTL="\K[^"]+' || echo "1800")
-        h_mxpref=$(echo "$line" | grep -oP 'MXPref="\K[^"]+' || echo "")
+        h_name=$(echo "$line" | sed -n 's/.*Name="\([^"]*\)".*/\1/p')
+        h_type=$(echo "$line" | sed -n 's/.*Type="\([^"]*\)".*/\1/p')
+        h_address=$(echo "$line" | sed -n 's/.*Address="\([^"]*\)".*/\1/p')
+        h_ttl=$(echo "$line" | sed -n 's/.*TTL="\([^"]*\)".*/\1/p')
+        h_mxpref=$(echo "$line" | sed -n 's/.*MXPref="\([^"]*\)".*/\1/p')
+        h_ttl=${h_ttl:-1800}
 
         # Check if this is the record to remove
         if [[ "$h_name" == "$name" && "$h_type" == "$record_type" && "$removed" == "false" ]]; then
@@ -465,7 +470,7 @@ cmd_dns_remove_host() {
             fi
             ((i++))
         fi
-    done < <(echo "$response" | grep -oP '<host[^/]*/>')
+    done < <(echo "$response" | grep -oE '<host[^>]*/>')
 
     if [[ "$removed" == "false" ]]; then
         print_error "No matching record found to remove."
@@ -519,12 +524,13 @@ cmd_dns_get_list() {
     response=$(api_request "domains.dns.getList" "SLD=${sld}" "TLD=${tld}")
 
     local using_our_dns
-    using_our_dns=$(echo "$response" | grep -oP 'IsUsingOurDNS="\K[^"]+' || echo "unknown")
+    using_our_dns=$(echo "$response" | sed -n 's/.*IsUsingOurDNS="\([^"]*\)".*/\1/p')
+    using_our_dns=${using_our_dns:-unknown}
     echo ""
     print_info "Using Namecheap DNS: ${using_our_dns}"
     echo ""
     echo "Nameservers:"
-    echo "$response" | grep -oP '<Nameserver>\K[^<]+' | while read -r ns; do
+    echo "$response" | grep -oE '<Nameserver>[^<]+' | sed 's/<Nameserver>//' | while read -r ns; do
         echo "  - ${ns}"
     done
     echo ""
@@ -615,10 +621,10 @@ cmd_dns_get_email_forwarding() {
     printf "%-20s %-40s\n" "MAILBOX" "FORWARDS TO"
     printf "%-20s %-40s\n" "-------" "-----------"
 
-    echo "$response" | grep -oP '<Forward[^/]*/>' | while read -r line; do
+    echo "$response" | grep -oE '<Forward[^>]*/>' | while read -r line; do
         local mailbox forward_to
-        mailbox=$(echo "$line" | grep -oP 'mailbox="\K[^"]+' || echo "")
-        forward_to=$(echo "$line" | grep -oP 'ForwardTo="\K[^"]+' || echo "")
+        mailbox=$(echo "$line" | sed -n 's/.*mailbox="\([^"]*\)".*/\1/p')
+        forward_to=$(echo "$line" | sed -n 's/.*ForwardTo="\([^"]*\)".*/\1/p')
         printf "%-20s %-40s\n" "${mailbox}@${domain}" "$forward_to"
     done
     echo ""
@@ -660,8 +666,8 @@ cmd_dns_set_email_forwarding() {
         local i=1
         while IFS= read -r line; do
             local mailbox forward_to
-            mailbox=$(echo "$line" | grep -oP '"MailBox"\s*:\s*"\K[^"]+' || echo "")
-            forward_to=$(echo "$line" | grep -oP '"ForwardTo"\s*:\s*"\K[^"]+' || echo "")
+            mailbox=$(echo "$line" | sed -n 's/.*"MailBox"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            forward_to=$(echo "$line" | sed -n 's/.*"ForwardTo"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
             if [[ -n "$mailbox" && -n "$forward_to" ]]; then
                 params+=("MailBox${i}=${mailbox}" "ForwardTo${i}=${forward_to}")
                 ((i++))
@@ -780,12 +786,13 @@ cmd_ns_get_info() {
     response=$(api_request "domains.ns.getInfo" "SLD=${sld}" "TLD=${tld}" "Nameserver=${nameserver}")
 
     local ns_ip
-    ns_ip=$(echo "$response" | grep -oP 'IP="\K[^"]+' || echo "unknown")
+    ns_ip=$(echo "$response" | sed -n 's/.*IP="\([^"]*\)".*/\1/p')
+    ns_ip=${ns_ip:-unknown}
     echo ""
     echo "Nameserver: ${nameserver}"
     echo "IP Address: ${ns_ip}"
     local statuses
-    statuses=$(echo "$response" | grep -oP '<Status>\K[^<]+' | tr '\n' ', ' | sed 's/,$//')
+    statuses=$(echo "$response" | grep -oE '<Status>[^<]+' | sed 's/<Status>//' | tr '\n' ', ' | sed 's/,$//')
     if [[ -n "$statuses" ]]; then
         echo "Status:     ${statuses}"
     fi
